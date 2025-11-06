@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Container,
   Box,
@@ -14,19 +14,19 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
-} from '@mui/material';
+} from "@mui/material";
 import {
   AddCircleOutline,
   Save,
   ExpandMore,
   Flight,
-} from '@mui/icons-material';
+} from "@mui/icons-material";
 
 const App: React.FC = () => {
-  console.log('[APP] App component rendering...');
-  const [apiKey, setApiKey] = useState<string>('');
-  const [flightCode, setFlightCode] = useState<string>('');
-  const [flightDate, setFlightDate] = useState<string>('');
+  console.log("[APP] App component rendering...");
+  const [apiKey, setApiKey] = useState<string>("");
+  const [flightCode, setFlightCode] = useState<string>("");
+  const [flightDate, setFlightDate] = useState<string>("");
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,22 +34,30 @@ const App: React.FC = () => {
 
   // Load API key on component mount
   useEffect(() => {
-    console.log('[APP] useEffect: Loading API key...');
+    console.log("[APP] useEffect: Loading API key...");
     const loadApiKey = async () => {
       try {
-        console.log('[APP] Checking if electronAPI is available:', typeof window.electronAPI !== 'undefined');
-        if (typeof window.electronAPI === 'undefined') {
-          console.error('[APP] window.electronAPI is not available!');
-          setError('Electron API not available. Please restart the application.');
+        console.log(
+          "[APP] Checking if electronAPI is available:",
+          typeof window.electronAPI !== "undefined"
+        );
+        if (typeof window.electronAPI === "undefined") {
+          console.error("[APP] window.electronAPI is not available!");
+          setError(
+            "Electron API not available. Please restart the application."
+          );
           return;
         }
         const key = await window.electronAPI.getApiKey();
-        console.log('[APP] API key loaded:', key ? 'Key found' : 'No key found');
+        console.log(
+          "[APP] API key loaded:",
+          key ? "Key found" : "No key found"
+        );
         if (key) {
           setApiKey(key);
         }
       } catch (err) {
-        console.error('[APP] Error loading API key:', err);
+        console.error("[APP] Error loading API key:", err);
         setError(`Error loading API key: ${err}`);
       }
     };
@@ -60,12 +68,12 @@ const App: React.FC = () => {
   const handleSaveKey = async () => {
     try {
       await window.electronAPI.setApiKey(apiKey);
-      setSuccess('API key saved successfully!');
+      setSuccess("API key saved successfully!");
       setError(null);
       // Clear success message after 3 seconds
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || 'Failed to save API key');
+      setError(err.message || "Failed to save API key");
       setSuccess(null);
     }
   };
@@ -79,30 +87,79 @@ const App: React.FC = () => {
     setResults([]);
 
     try {
-      const response = await window.electronAPI.fetchFlights(flightCode, flightDate);
+      console.log("[APP] 🔍 Starting flight search...", {
+        flightCode,
+        flightDate,
+      });
+      const response = await window.electronAPI.fetchFlights(
+        flightCode,
+        flightDate
+      );
+
+      console.log("[APP] 📥 Received response from API:", {
+        hasError: !!response.error,
+        responseType: typeof response,
+        isArray: Array.isArray(response),
+        responseKeys:
+          response && typeof response === "object"
+            ? Object.keys(response)
+            : "N/A",
+      });
+
+      // Log the full response data
+      console.log(
+        "[APP] 📦 Full response data:",
+        JSON.stringify(response, null, 2)
+      );
 
       if (response.error) {
+        console.error("[APP] ❌ API returned error:", response.error);
         setError(response.error);
         setResults([]);
       } else {
         // Handle different response structures
+        let flights: any[] = [];
+
         if (response.outbound) {
-          setResults(response.outbound);
+          console.log(
+            '[APP] Response has "outbound" property with',
+            response.outbound.length,
+            "flights"
+          );
+          flights = response.outbound;
         } else if (Array.isArray(response)) {
-          setResults(response);
+          console.log(
+            "[APP] Response is an array with",
+            response.length,
+            "flights"
+          );
+          flights = response;
         } else if (response.flights) {
-          setResults(response.flights);
+          console.log(
+            '[APP] Response has "flights" property with',
+            response.flights.length,
+            "flights"
+          );
+          flights = response.flights;
         } else {
-          setResults([response]);
+          console.log("[APP] Response is a single flight object");
+          flights = [response];
         }
-        setSuccess('Flights found successfully!');
+
+        console.log("[APP] ✅ Processed", flights.length, "flight(s)");
+        console.log("[APP] Flight details:", JSON.stringify(flights, null, 2));
+
+        setResults(flights);
+        setSuccess("Flights found successfully!");
         setTimeout(() => setSuccess(null), 3000);
       }
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
+      console.error("[APP] ❌ Error during flight search:", err);
+      setError(err.message || "An unexpected error occurred");
       setResults([]);
     } finally {
       setLoading(false);
+      console.log("[APP] 🔚 Search completed");
     }
   };
 
@@ -111,15 +168,15 @@ const App: React.FC = () => {
     try {
       const result = await window.electronAPI.generateIcs(flight);
       if (result.success) {
-        setSuccess('Flight added to calendar successfully!');
+        setSuccess("Flight added to calendar successfully!");
         setError(null);
         setTimeout(() => setSuccess(null), 3000);
       } else {
-        setError(result.error || 'Failed to add flight to calendar');
+        setError(result.error || "Failed to add flight to calendar");
         setSuccess(null);
       }
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
+      setError(err.message || "An unexpected error occurred");
       setSuccess(null);
     }
   };
@@ -136,7 +193,10 @@ const App: React.FC = () => {
           <Typography>API Key Settings</Typography>
         </AccordionSummary>
         <AccordionDetails>
-          <Box component="form" sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Box
+            component="form"
+            sx={{ display: "flex", gap: 2, alignItems: "center" }}
+          >
             <TextField
               label="RapidAPI Key"
               type="password"
@@ -162,7 +222,7 @@ const App: React.FC = () => {
       <Box
         component="form"
         onSubmit={handleSearch}
-        sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center' }}
+        sx={{ mb: 3, display: "flex", gap: 2, alignItems: "center" }}
       >
         <TextField
           label="Flight Number"
@@ -203,14 +263,18 @@ const App: React.FC = () => {
         </Alert>
       )}
       {success && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
+        <Alert
+          severity="success"
+          sx={{ mb: 2 }}
+          onClose={() => setSuccess(null)}
+        >
           {success}
         </Alert>
       )}
 
       {/* Loading Indicator */}
       {loading && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+        <Box sx={{ display: "flex", justifyContent: "center", my: 4 }}>
           <CircularProgress />
         </Box>
       )}
@@ -222,45 +286,112 @@ const App: React.FC = () => {
             Flight Results
           </Typography>
           <List>
-            {results.map((flight, index) => (
-              <ListItem
-                key={index}
-                secondaryAction={
-                  <IconButton
-                    edge="end"
-                    aria-label="add to calendar"
-                    onClick={() => handleAddToCalendar(flight)}
-                    color="primary"
-                  >
-                    <AddCircleOutline />
-                  </IconButton>
-                }
-              >
-                <ListItemText
-                  primary={`Flight ${flight.number || 'Unknown'}`}
-                  secondary={
-                    flight.departure?.time?.local
-                      ? `Departure: ${new Date(flight.departure.time.local).toLocaleString()}`
-                      : flight.departure?.time?.utc
-                      ? `Departure: ${new Date(flight.departure.time.utc).toLocaleString()}`
-                      : 'Departure time not available'
+            {results.map((flight, index) => {
+              // Get departure and arrival information
+              const departure = flight.departure;
+              const arrival = flight.arrival;
+
+              // Get departure time (try scheduledTime first, then time)
+              const departureTime =
+                departure?.scheduledTime?.local ||
+                departure?.scheduledTime?.utc ||
+                departure?.time?.local ||
+                departure?.time?.utc;
+
+              // Get arrival time (try scheduledTime first, then time)
+              const arrivalTime =
+                arrival?.scheduledTime?.local ||
+                arrival?.scheduledTime?.utc ||
+                arrival?.time?.local ||
+                arrival?.time?.utc;
+
+              // Get airport codes
+              const departureAirport =
+                departure?.airport?.iata ||
+                departure?.airport?.name ||
+                "Unknown";
+              const arrivalAirport =
+                arrival?.airport?.iata || arrival?.airport?.name || "Unknown";
+
+              // Format times
+              const departureTimeStr = departureTime
+                ? new Date(departureTime).toLocaleString()
+                : "Time not available";
+              const arrivalTimeStr = arrivalTime
+                ? new Date(arrivalTime).toLocaleString()
+                : "Time not available";
+
+              return (
+                <ListItem
+                  key={index}
+                  secondaryAction={
+                    <IconButton
+                      edge="end"
+                      aria-label="add to calendar"
+                      onClick={() => handleAddToCalendar(flight)}
+                      color="primary"
+                    >
+                      <AddCircleOutline />
+                    </IconButton>
                   }
-                />
-              </ListItem>
-            ))}
+                >
+                  <ListItemText
+                    primary={`${flight.number || "Unknown"} - ${departureAirport} → ${arrivalAirport}`}
+                    secondary={
+                      <>
+                        <Typography
+                          component="span"
+                          variant="body2"
+                          display="block"
+                        >
+                          <strong>Departure:</strong> {departureAirport} at{" "}
+                          {departureTimeStr}
+                        </Typography>
+                        <Typography
+                          component="span"
+                          variant="body2"
+                          display="block"
+                        >
+                          <strong>Arrival:</strong> {arrivalAirport} at{" "}
+                          {arrivalTimeStr}
+                        </Typography>
+                        {flight.airline?.name && (
+                          <Typography
+                            component="span"
+                            variant="body2"
+                            display="block"
+                            color="text.secondary"
+                          >
+                            {flight.airline.name}
+                          </Typography>
+                        )}
+                      </>
+                    }
+                  />
+                </ListItem>
+              );
+            })}
           </List>
         </Box>
       )}
 
       {/* No Results Message */}
-      {!loading && results.length === 0 && flightCode && flightDate && !error && (
-        <Typography variant="body1" color="text.secondary" align="center" sx={{ mt: 4 }}>
-          No flights found. Try a different flight number or date.
-        </Typography>
-      )}
+      {!loading &&
+        results.length === 0 &&
+        flightCode &&
+        flightDate &&
+        !error && (
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            align="center"
+            sx={{ mt: 4 }}
+          >
+            No flights found. Try a different flight number or date.
+          </Typography>
+        )}
     </Container>
   );
 };
 
 export default App;
-

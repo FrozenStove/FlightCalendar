@@ -188,10 +188,36 @@ ipcMain.handle(
       // Check cache first
       const cached = store.get(cacheKey) as any;
       if (cached && cached.expiresAt && cached.expiresAt > Date.now()) {
-        console.log("[MAIN] Returning cached flight data for:", cacheKey);
+        console.log("[MAIN] ✅ Cache HIT for:", cacheKey);
+        console.log(
+          "[MAIN] Cached data retrieved:",
+          JSON.stringify(cached.data, null, 2)
+        );
+        console.log(
+          "[MAIN] Cache age:",
+          Math.round((Date.now() - cached.cachedAt) / 1000 / 60),
+          "minutes"
+        );
+        console.log(
+          "[MAIN] Cache expires in:",
+          Math.round((cached.expiresAt - Date.now()) / 1000 / 60),
+          "minutes"
+        );
         return cached.data;
       }
-      console.log("[MAIN] Cache miss or expired, fetching from API...");
+      if (cached) {
+        console.log("[MAIN] ⚠️ Cache expired for:", cacheKey);
+        console.log(
+          "[MAIN] Expired at:",
+          new Date(cached.expiresAt).toISOString()
+        );
+      } else {
+        console.log(
+          "[MAIN] ❌ Cache MISS - no cached data found for:",
+          cacheKey
+        );
+      }
+      console.log("[MAIN] Fetching fresh data from API...");
 
       // Get API key
       const encryptedKey = store.get("rapidApiKey") as string | undefined;
@@ -220,11 +246,56 @@ ipcMain.handle(
         }
       );
 
-      console.log("[MAIN] API response received:", {
+      console.log("[MAIN] ✅ API response received:", {
         status: response.status,
+        statusText: response.statusText,
         hasData: !!response.data,
         dataKeys: response.data ? Object.keys(response.data) : [],
       });
+
+      // Log the full API response data
+      console.log(
+        "[MAIN] 📦 Full API response data:",
+        JSON.stringify(response.data, null, 2)
+      );
+
+      // Log response structure details
+      if (response.data) {
+        if (Array.isArray(response.data)) {
+          console.log(
+            "[MAIN] Response is an array with",
+            response.data.length,
+            "items"
+          );
+          if (response.data.length > 0) {
+            console.log(
+              "[MAIN] First item structure:",
+              JSON.stringify(response.data[0], null, 2)
+            );
+          }
+        } else if (typeof response.data === "object") {
+          console.log(
+            "[MAIN] Response is an object with keys:",
+            Object.keys(response.data)
+          );
+          // Log each top-level property
+          Object.keys(response.data).forEach((key) => {
+            const value = response.data[key];
+            if (Array.isArray(value)) {
+              console.log(
+                `[MAIN]   - ${key}: array with ${value.length} items`
+              );
+            } else if (typeof value === "object" && value !== null) {
+              console.log(
+                `[MAIN]   - ${key}: object with keys:`,
+                Object.keys(value)
+              );
+            } else {
+              console.log(`[MAIN]   - ${key}:`, typeof value, value);
+            }
+          });
+        }
+      }
 
       // Cache the response for 24 hours
       const cacheData = {
@@ -233,7 +304,13 @@ ipcMain.handle(
         cachedAt: Date.now(),
       };
       store.set(cacheKey, cacheData);
-      console.log("[MAIN] Response cached for 24 hours");
+      console.log("[MAIN] 💾 Response cached successfully");
+      console.log("[MAIN] Cache key:", cacheKey);
+      console.log(
+        "[MAIN] Cache expires at:",
+        new Date(cacheData.expiresAt).toISOString()
+      );
+      console.log("[MAIN] Cache will be valid for 24 hours");
 
       return response.data;
     } catch (error: any) {
@@ -290,23 +367,45 @@ ipcMain.handle("generate-ics", async (_event, flight: any) => {
       };
     }
 
-    // Parse dates - check for time object structure
-    console.log("[MAIN] Departure time object:", departure.time);
-    console.log("[MAIN] Arrival time object:", arrival.time);
+    // Parse dates - check for scheduledTime object structure (API uses scheduledTime, not time)
+    console.log(
+      "[MAIN] Departure scheduledTime object:",
+      departure.scheduledTime
+    );
+    console.log("[MAIN] Arrival scheduledTime object:", arrival.scheduledTime);
+    console.log("[MAIN] Departure time object (legacy):", departure.time);
+    console.log("[MAIN] Arrival time object (legacy):", arrival.time);
 
+    // Try scheduledTime first (current API format), then fall back to time (legacy format)
     const departureTime =
-      departure.time?.utc || departure.time?.local || departure.time;
+      departure.scheduledTime?.utc ||
+      departure.scheduledTime?.local ||
+      departure.time?.utc ||
+      departure.time?.local ||
+      departure.time;
     const arrivalTime =
-      arrival.time?.utc || arrival.time?.local || arrival.time;
+      arrival.scheduledTime?.utc ||
+      arrival.scheduledTime?.local ||
+      arrival.time?.utc ||
+      arrival.time?.local ||
+      arrival.time;
 
     console.log("[MAIN] Parsed departure time:", departureTime);
     console.log("[MAIN] Parsed arrival time:", arrivalTime);
 
     if (!departureTime || !arrivalTime) {
       console.error("[MAIN] Missing time data in departure or arrival");
+      console.error(
+        "[MAIN] Departure object keys:",
+        departure ? Object.keys(departure) : "null"
+      );
+      console.error(
+        "[MAIN] Arrival object keys:",
+        arrival ? Object.keys(arrival) : "null"
+      );
       return {
         success: false,
-        error: "Invalid flight data: missing time information",
+        error: `Invalid flight data: missing time information. Departure time: ${departureTime ? "found" : "missing"}, Arrival time: ${arrivalTime ? "found" : "missing"}`,
       };
     }
 
