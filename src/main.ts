@@ -557,154 +557,59 @@ ipcMain.handle("generate-ics", async (_event, flight: any) => {
       value.substring(0, 200)
     );
 
-    // Create HTML page with data URI to trigger download in browser
-    console.log(
-      "[MAIN] 🔍 Step 7: Creating HTML page to trigger browser download..."
+    // Create Google Calendar URL and open directly in browser
+    console.log("[MAIN] 🔍 Step 7: Creating Google Calendar URL...");
+
+    // Format dates for Google Calendar (YYYYMMDDTHHmmssZ format)
+    const formatDateForGoogleCalendar = (date: Date): string => {
+      const year = date.getUTCFullYear();
+      const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(date.getUTCDate()).padStart(2, "0");
+      const hours = String(date.getUTCHours()).padStart(2, "0");
+      const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+      const seconds = String(date.getUTCSeconds()).padStart(2, "0");
+      return `${year}${month}${day}T${hours}${minutes}${seconds}Z`;
+    };
+
+    const startDateStr = formatDateForGoogleCalendar(departureDate);
+    const endDateStr = formatDateForGoogleCalendar(arrivalDate);
+
+    // Get airport information (reuse variables already declared earlier)
+    const route = `${departureAirport} → ${arrivalAirport}`;
+    const description = `Flight from ${departureAirport} to ${arrivalAirport}`;
+
+    // Create Google Calendar URL
+    const googleCalendarUrl = new URL(
+      "https://calendar.google.com/calendar/render"
     );
+    googleCalendarUrl.searchParams.set("action", "TEMPLATE");
+    googleCalendarUrl.searchParams.set("text", `Flight ${flightNumber}`);
+    googleCalendarUrl.searchParams.set(
+      "dates",
+      `${startDateStr}/${endDateStr}`
+    );
+    googleCalendarUrl.searchParams.set("details", description);
+    googleCalendarUrl.searchParams.set("location", route);
 
-    // Encode the ICS content for use in data URI
-    const encodedContent = encodeURIComponent(value);
-    const dataUri = `data:text/calendar;charset=utf-8,${encodedContent}`;
+    const calendarUrl = googleCalendarUrl.toString();
+    console.log("[MAIN]   Google Calendar URL created");
+    console.log("[MAIN]   URL:", calendarUrl);
 
-    // Create an HTML page that automatically triggers the download
-    const safeFlightNumber = flightNumber.replace(/\s+/g, "-");
-    const htmlContent = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Flight Calendar Event</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      margin: 0;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-    }
-    .container {
-      text-align: center;
-      padding: 2rem;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 10px;
-      backdrop-filter: blur(10px);
-    }
-    h1 { margin-top: 0; }
-    .download-link {
-      display: inline-block;
-      margin-top: 1rem;
-      padding: 12px 24px;
-      background: white;
-      color: #667eea;
-      text-decoration: none;
-      border-radius: 5px;
-      font-weight: bold;
-      transition: transform 0.2s;
-    }
-    .download-link:hover {
-      transform: scale(1.05);
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>✈️ Flight Calendar Event</h1>
-    <p>Your flight event is ready to add to your calendar.</p>
-    <a href="${dataUri}" download="flight-${safeFlightNumber}-${departureDate.toISOString().split("T")[0]}.ics" class="download-link" id="downloadLink">
-      Download Calendar Event
-    </a>
-    <p style="margin-top: 2rem; font-size: 0.9em; opacity: 0.8;">
-      If the download doesn't start automatically, click the button above.
-    </p>
-  </div>
-  <script>
-    // Auto-trigger download immediately
-    (function() {
-      const link = document.getElementById('downloadLink');
-      if (link) {
-        link.click();
-      }
-    })();
-  </script>
-</body>
-</html>`;
-
-    // Create a temporary HTML file
-    const tempDir = os.tmpdir();
-    const tempHtmlFileName = `flight-calendar-${Date.now()}.html`;
-    const tempHtmlFilePath = path.join(tempDir, tempHtmlFileName);
-
-    console.log("[MAIN]   Temp HTML file path:", tempHtmlFilePath);
-
+    // Open Google Calendar URL in the default browser
+    console.log("[MAIN] 🔍 Step 8: Opening Google Calendar in browser...");
     try {
-      // Write HTML content to temporary file
-      fs.writeFileSync(tempHtmlFilePath, htmlContent, "utf8");
-      console.log("[MAIN] ✅ Temporary HTML file created");
-
-      // Create properly formatted file:// URL for the HTML file
-      const fileUrl = pathToFileURL(tempHtmlFilePath).href;
-      console.log("[MAIN]   File URL:", fileUrl);
-
-      // Open the HTML file in the default browser
-      console.log("[MAIN] 🔍 Step 8: Opening HTML page in browser...");
-      try {
-        await shell.openExternal(fileUrl);
-        console.log("[MAIN] ✅ HTML page opened in browser successfully");
-        console.log(
-          "[MAIN]   The browser should automatically download the calendar event"
-        );
-
-        // Schedule cleanup of temp HTML file after 60 seconds
-        // This gives the browser time to load and trigger the download
-        setTimeout(() => {
-          try {
-            if (fs.existsSync(tempHtmlFilePath)) {
-              fs.unlinkSync(tempHtmlFilePath);
-              console.log(
-                "[MAIN] 🗑️ Temporary HTML file cleaned up:",
-                tempHtmlFilePath
-              );
-            }
-          } catch (cleanupError: any) {
-            console.error(
-              "[MAIN] ⚠️ Error cleaning up temp HTML file:",
-              cleanupError
-            );
-            // Don't fail - temp file cleanup is not critical
-          }
-        }, 60000); // 60 seconds
-      } catch (openError: any) {
-        console.error(
-          "[MAIN] ❌ Error opening HTML page in browser:",
-          openError
-        );
-        console.error("[MAIN]   Error message:", openError.message);
-        console.error("[MAIN]   Error stack:", openError.stack);
-
-        // Clean up temp file on error
-        try {
-          if (fs.existsSync(tempHtmlFilePath)) {
-            fs.unlinkSync(tempHtmlFilePath);
-          }
-        } catch (cleanupError) {
-          // Ignore cleanup errors
-        }
-
-        return {
-          success: false,
-          error: `Failed to open in browser: ${openError.message}`,
-        };
-      }
-    } catch (writeError: any) {
-      console.error("[MAIN] ❌ Error writing temporary HTML file:", writeError);
-      console.error("[MAIN]   Error message:", writeError.message);
-      console.error("[MAIN]   Error code:", writeError.code);
+      await shell.openExternal(calendarUrl);
+      console.log("[MAIN] ✅ Google Calendar opened in browser successfully");
+      console.log(
+        "[MAIN]   The event should be pre-filled and ready to save to your calendar"
+      );
+    } catch (openError: any) {
+      console.error("[MAIN] ❌ Error opening Google Calendar:", openError);
+      console.error("[MAIN]   Error message:", openError.message);
+      console.error("[MAIN]   Error stack:", openError.stack);
       return {
         success: false,
-        error: `Failed to create temporary HTML file: ${writeError.message}`,
+        error: `Failed to open Google Calendar: ${openError.message}`,
       };
     }
 
