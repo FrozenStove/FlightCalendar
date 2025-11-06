@@ -1,4 +1,11 @@
-import { app, BrowserWindow, ipcMain, safeStorage, dialog } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  safeStorage,
+  dialog,
+  shell,
+} from "electron";
 import Store from "electron-store";
 import axios from "axios";
 import { createEvent } from "ics";
@@ -337,61 +344,107 @@ ipcMain.handle(
 
 // Generate ICS file (receives a flight object, parses dates, uses ics lib, shows dialog, saves file)
 ipcMain.handle("generate-ics", async (_event, flight: any) => {
+  console.log("[MAIN] 📅 Starting ICS file generation process...");
   try {
     console.log(
-      "[MAIN] generate-ics called with flight:",
+      "[MAIN] 📦 Received flight data:",
       JSON.stringify(flight, null, 2)
     );
 
     const mainWindow = BrowserWindow.getAllWindows()[0];
     if (!mainWindow) {
-      console.error("[MAIN] No window available for ICS generation");
+      console.error("[MAIN] ❌ No window available for ICS generation");
       return { success: false, error: "No window available" };
     }
+    console.log("[MAIN] ✅ Main window found, proceeding with ICS generation");
 
     // Parse flight data
+    console.log("[MAIN] 🔍 Step 1: Parsing flight data...");
     const flightNumber = flight.number || "Unknown";
-    console.log("[MAIN] Flight number:", flightNumber);
+    console.log("[MAIN]   Flight number extracted:", flightNumber);
 
     const departure = flight.departure;
     const arrival = flight.arrival;
 
-    console.log("[MAIN] Departure data:", JSON.stringify(departure, null, 2));
-    console.log("[MAIN] Arrival data:", JSON.stringify(arrival, null, 2));
+    console.log("[MAIN]   Departure data:", JSON.stringify(departure, null, 2));
+    console.log("[MAIN]   Arrival data:", JSON.stringify(arrival, null, 2));
 
     if (!departure || !arrival) {
-      console.error("[MAIN] Missing departure or arrival data");
+      console.error("[MAIN] ❌ Missing departure or arrival data");
+      console.error("[MAIN]   Departure exists:", !!departure);
+      console.error("[MAIN]   Arrival exists:", !!arrival);
       return {
         success: false,
         error: "Invalid flight data: missing departure or arrival information",
       };
     }
+    console.log("[MAIN] ✅ Departure and arrival data validated");
 
     // Parse dates - check for scheduledTime object structure (API uses scheduledTime, not time)
+    console.log("[MAIN] 🔍 Step 2: Parsing time data...");
     console.log(
-      "[MAIN] Departure scheduledTime object:",
-      departure.scheduledTime
+      "[MAIN]   Departure scheduledTime object:",
+      JSON.stringify(departure.scheduledTime, null, 2)
     );
-    console.log("[MAIN] Arrival scheduledTime object:", arrival.scheduledTime);
-    console.log("[MAIN] Departure time object (legacy):", departure.time);
-    console.log("[MAIN] Arrival time object (legacy):", arrival.time);
+    console.log(
+      "[MAIN]   Arrival scheduledTime object:",
+      JSON.stringify(arrival.scheduledTime, null, 2)
+    );
+    console.log(
+      "[MAIN]   Departure time object (legacy):",
+      JSON.stringify(departure.time, null, 2)
+    );
+    console.log(
+      "[MAIN]   Arrival time object (legacy):",
+      JSON.stringify(arrival.time, null, 2)
+    );
 
     // Try scheduledTime first (current API format), then fall back to time (legacy format)
+    console.log("[MAIN]   Attempting to extract departure time...");
     const departureTime =
       departure.scheduledTime?.utc ||
       departure.scheduledTime?.local ||
       departure.time?.utc ||
       departure.time?.local ||
       departure.time;
+    console.log("[MAIN]   Departure time extracted:", departureTime);
+    console.log(
+      "[MAIN]   Departure time source:",
+      departure.scheduledTime?.utc
+        ? "scheduledTime.utc"
+        : departure.scheduledTime?.local
+          ? "scheduledTime.local"
+          : departure.time?.utc
+            ? "time.utc"
+            : departure.time?.local
+              ? "time.local"
+              : departure.time
+                ? "time"
+                : "none"
+    );
+
+    console.log("[MAIN]   Attempting to extract arrival time...");
     const arrivalTime =
       arrival.scheduledTime?.utc ||
       arrival.scheduledTime?.local ||
       arrival.time?.utc ||
       arrival.time?.local ||
       arrival.time;
-
-    console.log("[MAIN] Parsed departure time:", departureTime);
-    console.log("[MAIN] Parsed arrival time:", arrivalTime);
+    console.log("[MAIN]   Arrival time extracted:", arrivalTime);
+    console.log(
+      "[MAIN]   Arrival time source:",
+      arrival.scheduledTime?.utc
+        ? "scheduledTime.utc"
+        : arrival.scheduledTime?.local
+          ? "scheduledTime.local"
+          : arrival.time?.utc
+            ? "time.utc"
+            : arrival.time?.local
+              ? "time.local"
+              : arrival.time
+                ? "time"
+                : "none"
+    );
 
     if (!departureTime || !arrivalTime) {
       console.error("[MAIN] Missing time data in departure or arrival");
@@ -409,40 +462,66 @@ ipcMain.handle("generate-ics", async (_event, flight: any) => {
       };
     }
 
+    console.log("[MAIN] 🔍 Step 3: Converting time strings to Date objects...");
     const departureDate = new Date(departureTime);
     const arrivalDate = new Date(arrivalTime);
 
-    console.log("[MAIN] Parsed departure date:", departureDate);
-    console.log("[MAIN] Parsed arrival date:", arrivalDate);
+    console.log("[MAIN]   Departure Date object created:", departureDate);
+    console.log(
+      "[MAIN]   Departure Date ISO string:",
+      departureDate.toISOString()
+    );
+    console.log("[MAIN]   Arrival Date object created:", arrivalDate);
+    console.log("[MAIN]   Arrival Date ISO string:", arrivalDate.toISOString());
 
     if (isNaN(departureDate.getTime()) || isNaN(arrivalDate.getTime())) {
-      console.error("[MAIN] Invalid date parsing");
+      console.error("[MAIN] ❌ Invalid date parsing");
+      console.error(
+        "[MAIN]   Departure date valid:",
+        !isNaN(departureDate.getTime())
+      );
+      console.error(
+        "[MAIN]   Arrival date valid:",
+        !isNaN(arrivalDate.getTime())
+      );
       return {
         success: false,
         error: "Invalid flight data: could not parse dates",
       };
     }
+    console.log("[MAIN] ✅ Date objects validated successfully");
 
     // Format dates for ics library (YYYYMMDDTHHmmss)
+    console.log("[MAIN] 🔍 Step 4: Formatting dates for ICS library...");
     const formatDateForICS = (
       date: Date
     ): [number, number, number, number, number] => {
-      return [
+      const formatted: [number, number, number, number, number] = [
         date.getUTCFullYear(),
         date.getUTCMonth() + 1,
         date.getUTCDate(),
         date.getUTCHours(),
         date.getUTCMinutes(),
       ];
+      console.log("[MAIN]   Formatted date array:", formatted);
+      return formatted;
     };
 
     const start = formatDateForICS(departureDate);
     const end = formatDateForICS(arrivalDate);
+    console.log("[MAIN]   Start date array:", start);
+    console.log("[MAIN]   End date array:", end);
 
     // Create event
+    console.log("[MAIN] 🔍 Step 5: Creating ICS event object...");
+    const departureAirport =
+      departure.airport?.iata || departure.airport?.name || "Unknown";
+    const arrivalAirport =
+      arrival.airport?.iata || arrival.airport?.name || "Unknown";
+
     const event = {
       title: `Flight ${flightNumber}`,
-      description: `Flight from ${departure.airport?.iata || departure.airport?.name || "Unknown"} to ${arrival.airport?.iata || arrival.airport?.name || "Unknown"}`,
+      description: `Flight from ${departureAirport} to ${arrivalAirport}`,
       location: `${departure.airport?.iata || ""} → ${arrival.airport?.iata || ""}`,
       start: start,
       end: end,
@@ -452,40 +531,102 @@ ipcMain.handle("generate-ics", async (_event, flight: any) => {
       endOutputType: "utc" as const,
     };
 
+    console.log(
+      "[MAIN]   Event object created:",
+      JSON.stringify(event, null, 2)
+    );
+    console.log("[MAIN]   Departure airport:", departureAirport);
+    console.log("[MAIN]   Arrival airport:", arrivalAirport);
+
+    console.log("[MAIN] 🔍 Step 6: Calling ICS library createEvent()...");
     const { error, value } = createEvent(event);
 
     if (error) {
+      console.error("[MAIN] ❌ ICS library error:", error);
+      console.error("[MAIN]   Error message:", error.message);
       return {
         success: false,
         error: `Failed to create calendar event: ${error.message}`,
       };
     }
+    console.log("[MAIN] ✅ ICS library call successful");
 
     if (!value) {
+      console.error("[MAIN] ❌ ICS library returned no value");
       return { success: false, error: "Failed to generate calendar file" };
     }
+    console.log("[MAIN]   ICS content length:", value.length, "characters");
+    console.log(
+      "[MAIN]   ICS content preview (first 200 chars):",
+      value.substring(0, 200)
+    );
 
     // Show save dialog
+    console.log("[MAIN] 🔍 Step 7: Showing save dialog...");
+    const defaultFileName = `flight-${flightNumber}-${departureDate.toISOString().split("T")[0]}.ics`;
+    console.log("[MAIN]   Default file name:", defaultFileName);
+
     const result = await dialog.showSaveDialog(mainWindow, {
       title: "Save Calendar File",
-      defaultPath: `flight-${flightNumber}-${departureDate.toISOString().split("T")[0]}.ics`,
+      defaultPath: defaultFileName,
       filters: [
         { name: "iCalendar Files", extensions: ["ics"] },
         { name: "All Files", extensions: ["*"] },
       ],
     });
 
+    console.log("[MAIN]   Save dialog result:", {
+      canceled: result.canceled,
+      filePath: result.filePath,
+    });
+
     if (result.canceled || !result.filePath) {
+      console.log("[MAIN] ⚠️ Save dialog cancelled by user");
       return { success: false, error: "Save cancelled" };
     }
+    console.log("[MAIN] ✅ Save dialog completed, file path:", result.filePath);
 
     // Write file using Node.js fs (main process has access)
+    console.log("[MAIN] 🔍 Step 8: Writing ICS file to disk...");
     const fs = require("fs");
-    fs.writeFileSync(result.filePath, value);
+    try {
+      fs.writeFileSync(result.filePath, value);
+      const stats = fs.statSync(result.filePath);
+      console.log("[MAIN] ✅ ICS file written successfully");
+      console.log("[MAIN]   File path:", result.filePath);
+      console.log("[MAIN]   File size:", stats.size, "bytes");
+    } catch (writeError: any) {
+      console.error("[MAIN] ❌ Error writing ICS file:", writeError);
+      console.error("[MAIN]   Error message:", writeError.message);
+      console.error("[MAIN]   Error code:", writeError.code);
+      return {
+        success: false,
+        error: `Failed to write file: ${writeError.message}`,
+      };
+    }
 
+    // Open the file with the default application (calendar app)
+    console.log(
+      "[MAIN] 🔍 Step 9: Opening ICS file with default application..."
+    );
+    try {
+      await shell.openPath(result.filePath);
+      console.log("[MAIN] ✅ ICS file opened with default application");
+    } catch (openError: any) {
+      console.error("[MAIN] ⚠️ Error opening ICS file:", openError);
+      console.error("[MAIN]   Error message:", openError.message);
+      // Don't fail the operation if opening fails - file was still saved
+    }
+
+    console.log(
+      "[MAIN] ✅ ICS file generation process completed successfully!"
+    );
     return { success: true };
   } catch (error: any) {
-    console.error("Error generating ICS:", error);
+    console.error("[MAIN] ❌ Unexpected error during ICS generation:", error);
+    console.error("[MAIN]   Error type:", error.constructor.name);
+    console.error("[MAIN]   Error message:", error.message);
+    console.error("[MAIN]   Error stack:", error.stack);
     return { success: false, error: error.message || "Unknown error occurred" };
   }
 });
