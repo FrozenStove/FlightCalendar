@@ -33,10 +33,36 @@ if (require("electron-squirrel-startup")) {
 const createWindow = (): void => {
   console.log("[MAIN] Creating browser window...");
   try {
+    // Get icon path - works in both dev and production
+    let iconPath: string | undefined;
+    try {
+      // Try to find icon in assets directory (relative to project root)
+      const iconPathDev = path.join(__dirname, "..", "assets", "icon.png");
+      const iconPathProd = path.join(
+        process.resourcesPath,
+        "assets",
+        "icon.png"
+      );
+
+      // Check if icon exists in dev location
+      if (fs.existsSync(iconPathDev)) {
+        iconPath = iconPathDev;
+        console.log("[MAIN] Using icon from assets directory:", iconPath);
+      } else if (fs.existsSync(iconPathProd)) {
+        iconPath = iconPathProd;
+        console.log("[MAIN] Using icon from production resources:", iconPath);
+      } else {
+        console.log("[MAIN] Icon not found, using default Electron icon");
+      }
+    } catch (iconError) {
+      console.log("[MAIN] Could not load icon:", iconError);
+    }
+
     // Create the browser window
     const mainWindow = new BrowserWindow({
       height: 800,
       width: 1200,
+      icon: iconPath, // Set icon for window (works in dev and production)
       webPreferences: {
         preload: MAIN_WINDOW_VITE_PRELOAD,
         contextIsolation: true,

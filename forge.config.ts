@@ -8,6 +8,14 @@ import { VitePlugin } from "@electron-forge/plugin-vite";
 const config: ForgeConfig = {
   packagerConfig: {
     name: "Flight Calendar",
+    // Icon configuration - Electron will automatically use the correct format for each platform
+    // Place your icon files in the assets/ directory:
+    // - assets/icon.png (1024x1024) - will be used for all platforms
+    // OR platform-specific:
+    // - assets/icon.icns (macOS)
+    // - assets/icon.ico (Windows)
+    // - assets/icon.png (Linux)
+    icon: "./assets/icon", // No file extension - Electron adds it based on platform
   },
   rebuildConfig: {},
   makers: [
