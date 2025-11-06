@@ -574,22 +574,125 @@ ipcMain.handle("generate-ics", async (_event, flight: any) => {
     const startDateStr = formatDateForGoogleCalendar(departureDate);
     const endDateStr = formatDateForGoogleCalendar(arrivalDate);
 
-    // Get airport information (reuse variables already declared earlier)
-    const route = `${departureAirport} → ${arrivalAirport}`;
-    const description = `Flight from ${departureAirport} to ${arrivalAirport}`;
+    // Get airline information
+    const airlineName = flight.airline?.name || "Unknown Airline";
+    const airlineCode = flight.airline?.iata || flight.airline?.icao || "";
+
+    // Get full airport names and codes
+    const departureAirportName = departure.airport?.name || "Unknown";
+    const departureAirportCode =
+      departure.airport?.iata || departure.airport?.icao || "";
+    const departureTerminal = departure.terminal || "";
+
+    const arrivalAirportName = arrival.airport?.name || "Unknown";
+    const arrivalAirportCode =
+      arrival.airport?.iata || arrival.airport?.icao || "";
+    const arrivalTerminal = arrival.terminal || "";
+
+    // Format times for display (local time)
+    const formatTimeForDisplay = (timeStr: string | undefined): string => {
+      if (!timeStr) return "Time not available";
+      try {
+        const date = new Date(timeStr);
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+        const ampm = hours >= 12 ? "pm" : "am";
+        const displayHours = hours % 12 || 12;
+        const displayMinutes = String(minutes).padStart(2, "0");
+        return `${displayHours}:${displayMinutes}${ampm}`;
+      } catch {
+        return "Time not available";
+      }
+    };
+
+    const departureTimeLocal = formatTimeForDisplay(
+      departure.scheduledTime?.local || departure.time?.local
+    );
+    const arrivalTimeLocal = formatTimeForDisplay(
+      arrival.scheduledTime?.local || arrival.time?.local
+    );
+
+    // Calculate flight duration
+    const flightDurationMs = arrivalDate.getTime() - departureDate.getTime();
+    const flightDurationHours = Math.floor(flightDurationMs / (1000 * 60 * 60));
+    const flightDurationMinutes = Math.floor(
+      (flightDurationMs % (1000 * 60 * 60)) / (1000 * 60)
+    );
+    const flightDurationStr =
+      flightDurationHours > 0
+        ? `${flightDurationHours}h ${flightDurationMinutes}m`
+        : `${flightDurationMinutes}m`;
+
+    // Get flight distance if available
+    const distance = flight.greatCircleDistance;
+    const distanceStr = distance?.km
+      ? `${distance.km} km (${distance.mile} miles)`
+      : distance?.mile
+        ? `${distance.mile} miles`
+        : "";
+
+    // Build event title with airline name
+    const eventTitle = `${airlineName} flight ${flightNumber}`;
+
+    // Build rich description similar to Google's format
+    let descriptionParts: string[] = [];
+
+    // Main flight info line
+    descriptionParts.push(`${airlineName} flight ${flightNumber}`);
+    descriptionParts.push(""); // Empty line
+
+    // Departure info
+    let departureLine = `${departureAirportName} ${departureAirportCode}`;
+    if (departureTerminal) {
+      departureLine += ` Terminal ${departureTerminal}`;
+    }
+    departureLine += ` ${departureTimeLocal} (local time)`;
+    descriptionParts.push(departureLine);
+
+    // Arrival info
+    let arrivalLine = `- ${arrivalAirportName} ${arrivalAirportCode}`;
+    if (arrivalTerminal) {
+      arrivalLine += ` Terminal ${arrivalTerminal}`;
+    }
+    arrivalLine += ` ${arrivalTimeLocal} (local time)`;
+    descriptionParts.push(arrivalLine);
+
+    // Additional details
+    descriptionParts.push(""); // Empty line
+    descriptionParts.push("Flight Details:");
+    if (flightDurationStr) {
+      descriptionParts.push(`Duration: ${flightDurationStr}`);
+    }
+    if (distanceStr) {
+      descriptionParts.push(`Distance: ${distanceStr}`);
+    }
+    if (departureTerminal) {
+      descriptionParts.push(`Departure Terminal: ${departureTerminal}`);
+    }
+    if (arrivalTerminal) {
+      descriptionParts.push(`Arrival Terminal: ${arrivalTerminal}`);
+    }
+    if (airlineCode) {
+      descriptionParts.push(`Airline Code: ${airlineCode}`);
+    }
+
+    const description = descriptionParts.join("\n");
+
+    // Location should be just the departure airport (as per Google's format)
+    const location = `${departureAirportName} ${departureAirportCode}`;
 
     // Create Google Calendar URL
     const googleCalendarUrl = new URL(
       "https://calendar.google.com/calendar/render"
     );
     googleCalendarUrl.searchParams.set("action", "TEMPLATE");
-    googleCalendarUrl.searchParams.set("text", `Flight ${flightNumber}`);
+    googleCalendarUrl.searchParams.set("text", eventTitle);
     googleCalendarUrl.searchParams.set(
       "dates",
       `${startDateStr}/${endDateStr}`
     );
     googleCalendarUrl.searchParams.set("details", description);
-    googleCalendarUrl.searchParams.set("location", route);
+    googleCalendarUrl.searchParams.set("location", location);
 
     const calendarUrl = googleCalendarUrl.toString();
     console.log("[MAIN]   Google Calendar URL created");
