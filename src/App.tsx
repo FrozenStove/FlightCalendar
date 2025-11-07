@@ -14,6 +14,8 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  FormControlLabel,
+  Checkbox,
 } from "@mui/material";
 import {
   AddCircleOutline,
@@ -31,6 +33,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [bypassCache, setBypassCache] = useState<boolean>(false);
 
   // Load API key on component mount
   useEffect(() => {
@@ -90,10 +93,12 @@ const App: React.FC = () => {
       console.log("[APP] 🔍 Starting flight search...", {
         flightCode,
         flightDate,
+        bypassCache,
       });
       const response = await window.electronAPI.fetchFlights(
         flightCode,
-        flightDate
+        flightDate,
+        bypassCache
       );
 
       console.log("[APP] 📥 Received response from API:", {
@@ -219,41 +224,48 @@ const App: React.FC = () => {
       </Accordion>
 
       {/* Flight Search Form */}
-      <Box
-        component="form"
-        onSubmit={handleSearch}
-        sx={{ mb: 3, display: "flex", gap: 2, alignItems: "center" }}
-      >
-        <TextField
-          label="Flight Number"
-          value={flightCode}
-          onChange={(e) => setFlightCode(e.target.value.toUpperCase())}
-          required
-          variant="outlined"
-          placeholder="e.g., AA123"
-          sx={{ flex: 1 }}
+      <Box component="form" onSubmit={handleSearch} sx={{ mb: 3 }}>
+        <Box sx={{ display: "flex", gap: 2, alignItems: "center", mb: 1 }}>
+          <TextField
+            label="Flight Number"
+            value={flightCode}
+            onChange={(e) => setFlightCode(e.target.value.toUpperCase())}
+            required
+            variant="outlined"
+            placeholder="e.g., AA123"
+            sx={{ flex: 1 }}
+          />
+          <TextField
+            label="Departure Date"
+            type="date"
+            value={flightDate}
+            onChange={(e) => setFlightDate(e.target.value)}
+            required
+            variant="outlined"
+            InputLabelProps={{
+              shrink: true,
+            }}
+            sx={{ flex: 1 }}
+          />
+          <Button
+            type="submit"
+            variant="contained"
+            startIcon={<Flight />}
+            disabled={loading}
+            sx={{ minWidth: 120, height: 56 }}
+          >
+            Search
+          </Button>
+        </Box>
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={bypassCache}
+              onChange={(e) => setBypassCache(e.target.checked)}
+            />
+          }
+          label="Force refresh (bypass cache)"
         />
-        <TextField
-          label="Departure Date"
-          type="date"
-          value={flightDate}
-          onChange={(e) => setFlightDate(e.target.value)}
-          required
-          variant="outlined"
-          InputLabelProps={{
-            shrink: true,
-          }}
-          sx={{ flex: 1 }}
-        />
-        <Button
-          type="submit"
-          variant="contained"
-          startIcon={<Flight />}
-          disabled={loading}
-          sx={{ minWidth: 120, height: 56 }}
-        >
-          Search
-        </Button>
       </Box>
 
       {/* Alerts */}

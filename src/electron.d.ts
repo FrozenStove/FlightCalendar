@@ -1,7 +1,11 @@
 export interface IElectronAPI {
   getApiKey: () => Promise<string | null>;
   setApiKey: (key: string) => Promise<void>;
-  fetchFlights: (flightCode: string, date: string) => Promise<any>;
+  fetchFlights: (
+    flightCode: string,
+    date: string,
+    bypassCache?: boolean
+  ) => Promise<any>;
   generateIcs: (flight: any) => Promise<{ success: boolean; error?: string }>;
 }
 

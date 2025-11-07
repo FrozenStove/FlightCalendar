@@ -206,44 +206,59 @@ ipcMain.handle("set-api-key", async (_event, key: string) => {
 // Fetch flights (gets key, calls axios to Aerodatabox URL, returns JSON)
 ipcMain.handle(
   "fetch-flights",
-  async (_event, flightCode: string, date: string) => {
+  async (
+    _event,
+    flightCode: string,
+    date: string,
+    bypassCache: boolean = false
+  ) => {
     try {
-      console.log("[MAIN] fetch-flights called with:", { flightCode, date });
+      console.log("[MAIN] fetch-flights called with:", {
+        flightCode,
+        date,
+        bypassCache,
+      });
 
       // Format date for API (YYYY-MM-DD)
       const formattedDate = date.split("T")[0];
       const cacheKey = `flight_${flightCode}_${formattedDate}`;
 
-      // Check cache first
-      const cached = store.get(cacheKey) as any;
-      if (cached && cached.expiresAt && cached.expiresAt > Date.now()) {
-        console.log("[MAIN] ✅ Cache HIT for:", cacheKey);
-        console.log(
-          "[MAIN] Cached data retrieved:",
-          JSON.stringify(cached.data, null, 2)
-        );
-        console.log(
-          "[MAIN] Cache age:",
-          Math.round((Date.now() - cached.cachedAt) / 1000 / 60),
-          "minutes"
-        );
-        console.log(
-          "[MAIN] Cache expires in:",
-          Math.round((cached.expiresAt - Date.now()) / 1000 / 60),
-          "minutes"
-        );
-        return cached.data;
-      }
-      if (cached) {
-        console.log("[MAIN] ⚠️ Cache expired for:", cacheKey);
-        console.log(
-          "[MAIN] Expired at:",
-          new Date(cached.expiresAt).toISOString()
-        );
+      // Check cache first (unless bypassing)
+      if (!bypassCache) {
+        const cached = store.get(cacheKey) as any;
+        if (cached && cached.expiresAt && cached.expiresAt > Date.now()) {
+          console.log("[MAIN] ✅ Cache HIT for:", cacheKey);
+          console.log(
+            "[MAIN] Cached data retrieved:",
+            JSON.stringify(cached.data, null, 2)
+          );
+          console.log(
+            "[MAIN] Cache age:",
+            Math.round((Date.now() - cached.cachedAt) / 1000 / 60),
+            "minutes"
+          );
+          console.log(
+            "[MAIN] Cache expires in:",
+            Math.round((cached.expiresAt - Date.now()) / 1000 / 60),
+            "minutes"
+          );
+          return cached.data;
+        }
+        if (cached) {
+          console.log("[MAIN] ⚠️ Cache expired for:", cacheKey);
+          console.log(
+            "[MAIN] Expired at:",
+            new Date(cached.expiresAt).toISOString()
+          );
+        } else {
+          console.log(
+            "[MAIN] ❌ Cache MISS - no cached data found for:",
+            cacheKey
+          );
+        }
       } else {
         console.log(
-          "[MAIN] ❌ Cache MISS - no cached data found for:",
-          cacheKey
+          "[MAIN] ⚠️ Cache bypass requested - fetching fresh data from API"
         );
       }
       console.log("[MAIN] Fetching fresh data from API...");
@@ -484,9 +499,55 @@ ipcMain.handle("generate-ics", async (_event, flight: any) => {
       };
     }
 
-    console.log("[MAIN] 🔍 Step 3: Converting time strings to Date objects...");
-    const departureDate = new Date(departureTime);
-    const arrivalDate = new Date(arrivalTime);
+    console.log(
+      "[MAIN] 🔍 Step 3: Checking for delays and converting time strings to Date objects..."
+    );
+
+    // Get original scheduled times
+    const scheduledDepartureTime = departureTime;
+    const scheduledArrivalTime = arrivalTime;
+
+    // Check for predicted/estimated times (delays)
+    const predictedDepartureTime =
+      departure.predictedTime?.utc ||
+      departure.predictedTime?.local ||
+      departure.estimatedTime?.utc ||
+      departure.estimatedTime?.local;
+
+    const predictedArrivalTime =
+      arrival.predictedTime?.utc ||
+      arrival.predictedTime?.local ||
+      arrival.estimatedTime?.utc ||
+      arrival.estimatedTime?.local;
+
+    console.log("[MAIN]   Scheduled departure:", scheduledDepartureTime);
+    console.log("[MAIN]   Predicted departure:", predictedDepartureTime);
+    console.log("[MAIN]   Scheduled arrival:", scheduledArrivalTime);
+    console.log("[MAIN]   Predicted arrival:", predictedArrivalTime);
+
+    // Determine if flight is delayed
+    const isDelayed =
+      (predictedDepartureTime &&
+        new Date(predictedDepartureTime).getTime() >
+          new Date(scheduledDepartureTime).getTime()) ||
+      (predictedArrivalTime &&
+        new Date(predictedArrivalTime).getTime() >
+          new Date(scheduledArrivalTime).getTime());
+
+    console.log("[MAIN]   Flight delayed:", isDelayed);
+
+    // Use predicted times if available and different, otherwise use scheduled
+    const actualDepartureTime =
+      isDelayed && predictedDepartureTime
+        ? predictedDepartureTime
+        : scheduledDepartureTime;
+    const actualArrivalTime =
+      isDelayed && predictedArrivalTime
+        ? predictedArrivalTime
+        : scheduledArrivalTime;
+
+    const departureDate = new Date(actualDepartureTime);
+    const arrivalDate = new Date(actualArrivalTime);
 
     console.log("[MAIN]   Departure Date object created:", departureDate);
     console.log(
@@ -602,7 +663,9 @@ ipcMain.handle("generate-ics", async (_event, flight: any) => {
 
     // Get airline information
     const airlineName = flight.airline?.name || "Unknown Airline";
-    const airlineCode = flight.airline?.iata || flight.airline?.icao || "";
+    const airlineIata = flight.airline?.iata || "";
+    const airlineIcao = flight.airline?.icao || "";
+    const airlineCode = airlineIata || airlineIcao || "";
 
     // Get full airport names and codes
     const departureAirportName = departure.airport?.name || "Unknown";
@@ -631,12 +694,31 @@ ipcMain.handle("generate-ics", async (_event, flight: any) => {
       }
     };
 
-    const departureTimeLocal = formatTimeForDisplay(
+    // Get scheduled times for display
+    const scheduledDepartureTimeLocal = formatTimeForDisplay(
       departure.scheduledTime?.local || departure.time?.local
     );
-    const arrivalTimeLocal = formatTimeForDisplay(
+    const scheduledArrivalTimeLocal = formatTimeForDisplay(
       arrival.scheduledTime?.local || arrival.time?.local
     );
+
+    // Get predicted/estimated times for display
+    const predictedDepartureTimeLocal = formatTimeForDisplay(
+      departure.predictedTime?.local || departure.estimatedTime?.local
+    );
+    const predictedArrivalTimeLocal = formatTimeForDisplay(
+      arrival.predictedTime?.local || arrival.estimatedTime?.local
+    );
+
+    // Use actual times (predicted if delayed, otherwise scheduled)
+    const departureTimeLocal =
+      isDelayed && predictedDepartureTimeLocal !== "Time not available"
+        ? predictedDepartureTimeLocal
+        : scheduledDepartureTimeLocal;
+    const arrivalTimeLocal =
+      isDelayed && predictedArrivalTimeLocal !== "Time not available"
+        ? predictedArrivalTimeLocal
+        : scheduledArrivalTimeLocal;
 
     // Calculate flight duration
     const flightDurationMs = arrivalDate.getTime() - departureDate.getTime();
@@ -657,8 +739,17 @@ ipcMain.handle("generate-ics", async (_event, flight: any) => {
         ? `${distance.mile} miles`
         : "";
 
-    // Build event title with airline name
-    const eventTitle = `${airlineName} flight ${flightNumber}`;
+    // Build event title with airline name (add [DELAYED] if delayed)
+    const eventTitle = isDelayed
+      ? `[DELAYED] ${airlineName} flight ${flightNumber}`
+      : `${airlineName} flight ${flightNumber}`;
+
+    // Build FlightAware URL using ICAO code (preferred) or IATA code
+    // FlightAware uses ICAO codes (e.g., SWA for Southwest, not WN)
+    const flightAwareCode = airlineIcao || airlineIata || "";
+    const flightAwareUrl = flightAwareCode
+      ? `https://www.flightaware.com/live/flight/${flightAwareCode}${flightNumber.replace(/\s+/g, "")}`
+      : "";
 
     // Build rich description similar to Google's format
     let descriptionParts: string[] = [];
@@ -683,6 +774,32 @@ ipcMain.handle("generate-ics", async (_event, flight: any) => {
     arrivalLine += ` ${arrivalTimeLocal} (local time)`;
     descriptionParts.push(arrivalLine);
 
+    // Delay information if delayed
+    if (isDelayed) {
+      descriptionParts.push(""); // Empty line
+      descriptionParts.push("⚠️ FLIGHT DELAYED");
+      descriptionParts.push(""); // Empty line
+      descriptionParts.push("Original Scheduled Times:");
+      descriptionParts.push(
+        `  Departure: ${scheduledDepartureTimeLocal} (local time)`
+      );
+      descriptionParts.push(
+        `  Arrival: ${scheduledArrivalTimeLocal} (local time)`
+      );
+      descriptionParts.push(""); // Empty line
+      descriptionParts.push("Updated Times:");
+      if (predictedDepartureTimeLocal !== "Time not available") {
+        descriptionParts.push(
+          `  Departure: ${predictedDepartureTimeLocal} (local time) - Predicted/Estimated`
+        );
+      }
+      if (predictedArrivalTimeLocal !== "Time not available") {
+        descriptionParts.push(
+          `  Arrival: ${predictedArrivalTimeLocal} (local time) - Predicted/Estimated`
+        );
+      }
+    }
+
     // Additional details
     descriptionParts.push(""); // Empty line
     descriptionParts.push("Flight Details:");
@@ -700,6 +817,13 @@ ipcMain.handle("generate-ics", async (_event, flight: any) => {
     }
     if (airlineCode) {
       descriptionParts.push(`Airline Code: ${airlineCode}`);
+    }
+
+    // Add FlightAware tracking link
+    if (flightAwareUrl) {
+      descriptionParts.push(""); // Empty line
+      descriptionParts.push("Live Flight Tracking:");
+      descriptionParts.push(flightAwareUrl);
     }
 
     const description = descriptionParts.join("\n");
