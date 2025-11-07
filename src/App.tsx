@@ -34,6 +34,11 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [bypassCache, setBypassCache] = useState<boolean>(false);
+  const [quotaInfo, setQuotaInfo] = useState<{
+    remaining: string | number;
+    limit: string | number;
+    reset: string | number;
+  } | null>(null);
 
   // Load API key on component mount
   useEffect(() => {
@@ -111,44 +116,108 @@ const App: React.FC = () => {
             : "N/A",
       });
 
+      // Extract quota information if available
+      let responseData = response;
+      if (
+        response &&
+        typeof response === "object" &&
+        "_quotaInfo" in response
+      ) {
+        const quota = (response as any)._quotaInfo;
+        console.log("[APP] 📊 Raw quota information received:", quota);
+        console.log("[APP] 📊 Quota info type check:", {
+          remaining: typeof quota.remaining,
+          limit: typeof quota.limit,
+          reset: typeof quota.reset,
+          remainingValue: quota.remaining,
+          limitValue: quota.limit,
+          resetValue: quota.reset,
+        });
+
+        // Ensure values are properly formatted
+        const formattedQuota = {
+          remaining:
+            quota.remaining !== undefined &&
+            quota.remaining !== null &&
+            quota.remaining !== "Unknown"
+              ? quota.remaining
+              : "Unknown",
+          limit:
+            quota.limit !== undefined &&
+            quota.limit !== null &&
+            quota.limit !== "Unknown"
+              ? quota.limit
+              : "Unknown",
+          reset:
+            quota.reset !== undefined &&
+            quota.reset !== null &&
+            quota.reset !== "Unknown"
+              ? quota.reset
+              : "Unknown",
+        };
+
+        console.log("[APP] 📊 Formatted quota information:", formattedQuota);
+        setQuotaInfo(formattedQuota);
+
+        // Extract actual data (handle both array wrapper and object spread)
+        if ("_data" in response) {
+          // Array was wrapped
+          responseData = (response as any)._data;
+          console.log(
+            "[APP] 📦 Extracted array data from wrapper, length:",
+            Array.isArray(responseData) ? responseData.length : "not array"
+          );
+        } else {
+          // Object was spread, remove _quotaInfo
+          const { _quotaInfo, ...rest } = response as any;
+          responseData = rest;
+          console.log("[APP] 📦 Extracted object data from spread");
+        }
+      } else {
+        console.log("[APP] ⚠️ No quota info found in response");
+      }
+
       // Log the full response data
       console.log(
         "[APP] 📦 Full response data:",
-        JSON.stringify(response, null, 2)
+        JSON.stringify(responseData, null, 2)
       );
 
-      if (response.error) {
-        console.error("[APP] ❌ API returned error:", response.error);
-        setError(response.error);
+      if ((responseData as any).error) {
+        console.error(
+          "[APP] ❌ API returned error:",
+          (responseData as any).error
+        );
+        setError((responseData as any).error);
         setResults([]);
       } else {
         // Handle different response structures
         let flights: any[] = [];
 
-        if (response.outbound) {
+        if ((responseData as any).outbound) {
           console.log(
             '[APP] Response has "outbound" property with',
-            response.outbound.length,
+            (responseData as any).outbound.length,
             "flights"
           );
-          flights = response.outbound;
-        } else if (Array.isArray(response)) {
+          flights = (responseData as any).outbound;
+        } else if (Array.isArray(responseData)) {
           console.log(
             "[APP] Response is an array with",
-            response.length,
+            responseData.length,
             "flights"
           );
-          flights = response;
-        } else if (response.flights) {
+          flights = responseData;
+        } else if ((responseData as any).flights) {
           console.log(
             '[APP] Response has "flights" property with',
-            response.flights.length,
+            (responseData as any).flights.length,
             "flights"
           );
-          flights = response.flights;
+          flights = (responseData as any).flights;
         } else {
           console.log("[APP] Response is a single flight object");
-          flights = [response];
+          flights = [responseData];
         }
 
         console.log("[APP] ✅ Processed", flights.length, "flight(s)");
@@ -283,6 +352,36 @@ const App: React.FC = () => {
           {success}
         </Alert>
       )}
+
+      {/* API Quota Information */}
+      {quotaInfo &&
+        quotaInfo.remaining !== "Unknown" &&
+        quotaInfo.remaining !== "N/A (cached)" && (
+          <Alert
+            severity="info"
+            sx={{ mb: 2 }}
+            onClose={() => setQuotaInfo(null)}
+          >
+            <Typography variant="body2" component="div">
+              <strong>API Quota:</strong> {quotaInfo.remaining} /{" "}
+              {quotaInfo.limit} requests remaining
+              {quotaInfo.reset !== "Unknown" &&
+                quotaInfo.reset !== "N/A (cached)" && (
+                  <span>
+                    {" "}
+                    • Resets:{" "}
+                    {new Date(
+                      parseInt(quotaInfo.reset as string) * 1000
+                    ).toLocaleString()}
+                  </span>
+                )}
+              <br />
+              <Typography variant="caption" color="text.secondary">
+                Estimated: 1-2 units consumed per request (Tier 1-2 endpoint)
+              </Typography>
+            </Typography>
+          </Alert>
+        )}
 
       {/* Loading Indicator */}
       {loading && (

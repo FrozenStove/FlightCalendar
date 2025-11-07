@@ -290,12 +290,135 @@ ipcMain.handle(
         }
       );
 
+      // Extract quota information from response headers
+      // Axios normalizes headers to lowercase, but we'll check both
+      const headers = response.headers;
+
+      // Log all headers to debug (first time only, then we can remove this)
+      console.log("[MAIN] 📋 Response headers keys:", Object.keys(headers));
+      console.log("[MAIN] 📋 Sample headers:", {
+        "x-ratelimit-requests-remaining":
+          headers["x-ratelimit-requests-remaining"],
+        "x-rapidapi-quota-remaining": headers["x-rapidapi-quota-remaining"],
+        "x-ratelimit-remaining": headers["x-ratelimit-remaining"],
+      });
+
+      // Try multiple possible header name variations
+      // Convert to number if it's a string number
+      const getHeaderValue = (
+        headerName: string
+      ): string | number | undefined => {
+        const value = headers[headerName.toLowerCase()] || headers[headerName];
+        if (value !== undefined && value !== null) {
+          // Try to convert to number if it's a numeric string
+          const numValue =
+            typeof value === "string" ? parseInt(value, 10) : value;
+          if (
+            !isNaN(numValue as number) &&
+            typeof value === "string" &&
+            /^\d+$/.test(value.trim())
+          ) {
+            return numValue;
+          }
+          return value;
+        }
+        return undefined;
+      };
+
+      const quotaInfo = {
+        remaining:
+          getHeaderValue("x-ratelimit-requests-remaining") ||
+          getHeaderValue("x-rapidapi-quota-remaining") ||
+          getHeaderValue("x-ratelimit-remaining") ||
+          getHeaderValue("x-rapidapi-requests-remaining") ||
+          "Unknown",
+        limit:
+          getHeaderValue("x-ratelimit-requests-limit") ||
+          getHeaderValue("x-rapidapi-quota-limit") ||
+          getHeaderValue("x-ratelimit-limit") ||
+          getHeaderValue("x-rapidapi-requests-limit") ||
+          "Unknown",
+        reset:
+          getHeaderValue("x-ratelimit-requests-reset") ||
+          getHeaderValue("x-rapidapi-quota-reset") ||
+          getHeaderValue("x-ratelimit-reset") ||
+          getHeaderValue("x-rapidapi-requests-reset") ||
+          "Unknown",
+      };
+
       console.log("[MAIN] ✅ API response received:", {
         status: response.status,
         statusText: response.statusText,
         hasData: !!response.data,
         dataKeys: response.data ? Object.keys(response.data) : [],
       });
+
+      console.log("[MAIN] 📊 API Quota Information:");
+      console.log("[MAIN]   Remaining requests:", quotaInfo.remaining);
+      console.log("[MAIN]   Request limit:", quotaInfo.limit);
+      if (quotaInfo.reset !== "Unknown") {
+        // Try parsing as seconds (Unix timestamp) or milliseconds
+        const resetValue = quotaInfo.reset;
+        let resetDate: Date | null = null;
+
+        if (typeof resetValue === "string") {
+          const resetNum = parseInt(resetValue);
+          // If it's a reasonable timestamp (after 2000), use it
+          // Otherwise it might be in a different format
+          if (!isNaN(resetNum)) {
+            if (resetNum > 946684800) {
+              // Year 2000 in seconds
+              resetDate = new Date(resetNum * 1000);
+            } else if (resetNum > 946684800000) {
+              // Year 2000 in milliseconds
+              resetDate = new Date(resetNum);
+            } else {
+              console.log(
+                "[MAIN]   Quota reset timestamp appears invalid:",
+                resetValue
+              );
+              quotaInfo.reset = "Unknown";
+            }
+          }
+        } else if (typeof resetValue === "number") {
+          if (resetValue > 946684800) {
+            resetDate = new Date(resetValue * 1000);
+          } else if (resetValue > 946684800000) {
+            resetDate = new Date(resetValue);
+          } else {
+            console.log(
+              "[MAIN]   Quota reset timestamp appears invalid:",
+              resetValue
+            );
+            quotaInfo.reset = "Unknown";
+          }
+        }
+
+        if (
+          quotaInfo.reset !== "Unknown" &&
+          resetDate &&
+          !isNaN(resetDate.getTime())
+        ) {
+          console.log("[MAIN]   Quota resets at:", resetDate.toISOString());
+        } else if (quotaInfo.reset !== "Unknown") {
+          console.log(
+            "[MAIN]   Quota reset time: Unable to parse (value:",
+            resetValue,
+            ")"
+          );
+          quotaInfo.reset = "Unknown";
+        }
+      }
+
+      // Note: The flights/number endpoint typically consumes 1-2 API units (Tier 1-2)
+      // This information is not provided in headers, but based on Aerodatabox pricing:
+      // - Tier 1: 1 unit per request
+      // - Tier 2: 2 units per request
+      // - Tier 3: 6 units per request
+      // - Tier 4: 60 units per request
+      console.log(
+        "[MAIN]   Estimated tokens consumed: 1-2 units (Tier 1-2 endpoint)"
+      );
 
       // Log the full API response data
       console.log(
@@ -356,7 +479,38 @@ ipcMain.handle(
       );
       console.log("[MAIN] Cache will be valid for 24 hours");
 
-      return response.data;
+      // Return response data with quota information attached
+      // If response.data is an array, we need to wrap it in an object to attach _quotaInfo
+      let responseWithQuota: any;
+      if (Array.isArray(response.data)) {
+        // Wrap array in object to preserve quota info
+        responseWithQuota = {
+          _data: response.data,
+          _quotaInfo: {
+            remaining: quotaInfo.remaining,
+            limit: quotaInfo.limit,
+            reset: quotaInfo.reset,
+          },
+        };
+      } else {
+        // For objects, we can spread and add quota info
+        responseWithQuota = {
+          ...response.data,
+          _quotaInfo: {
+            remaining: quotaInfo.remaining,
+            limit: quotaInfo.limit,
+            reset: quotaInfo.reset,
+          },
+        };
+      }
+
+      console.log("[MAIN] 📤 Returning response with quota info:", {
+        isArray: Array.isArray(response.data),
+        hasQuotaInfo: !!responseWithQuota._quotaInfo,
+        quotaInfo: responseWithQuota._quotaInfo,
+      });
+
+      return responseWithQuota;
     } catch (error: any) {
       console.error("[MAIN] Error fetching flights:", error);
       if (error.response) {
