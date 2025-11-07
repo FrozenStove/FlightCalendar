@@ -78,12 +78,21 @@ This application follows Electron security best practices:
 ```
 FlightCalendar/
 ├── src/
-│   ├── main.ts          # Main Electron process
+│   ├── main.ts          # Main Electron process entry point
+│   ├── main/            # Main process modules
+│   │   ├── window.ts    # Window creation and lifecycle management
+│   │   ├── apiKey.ts    # API key encryption/decryption handlers
+│   │   ├── flightApi.ts # Flight data fetching and caching
+│   │   ├── calendar.ts  # Google Calendar event generation
+│   │   ├── cache.ts     # Cache utilities for flight data
+│   │   ├── quota.ts     # API quota information extraction
+│   │   └── store.ts     # Electron-store initialization
 │   ├── preload.ts       # Secure preload script
 │   ├── renderer.tsx     # React entry point
 │   ├── App.tsx          # Main React component
 │   ├── index.html       # HTML template
-│   └── electron.d.ts    # TypeScript declarations
+│   └── electron.d.ts   # TypeScript declarations
+├── assets/              # Application assets (icons, etc.)
 ├── package.json
 ├── tsconfig.json
 ├── forge.config.ts      # Electron Forge configuration
@@ -92,6 +101,19 @@ FlightCalendar/
 ├── vite.preload.config.ts  # Vite preload config
 └── vite.renderer.config.ts  # Vite renderer config
 ```
+
+### Code Organization
+
+The main process code has been modularized for better maintainability:
+
+- **`main.ts`**: Entry point that initializes all handlers
+- **`main/window.ts`**: Handles window creation, lifecycle events, and icon loading
+- **`main/apiKey.ts`**: Manages API key encryption/decryption using Electron's safeStorage
+- **`main/flightApi.ts`**: Handles flight data fetching from Aerodatabox API, caching, and quota tracking
+- **`main/calendar.ts`**: Generates Google Calendar URLs with rich flight information
+- **`main/cache.ts`**: Provides caching utilities with 24-hour TTL
+- **`main/quota.ts`**: Extracts and parses API quota information from response headers
+- **`main/store.ts`**: Initializes electron-store for data persistence
 
 ## Technologies
 
