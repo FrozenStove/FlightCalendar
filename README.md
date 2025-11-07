@@ -87,11 +87,23 @@ FlightCalendar/
 │   │   ├── cache.ts     # Cache utilities for flight data
 │   │   ├── quota.ts     # API quota information extraction
 │   │   └── store.ts     # Electron-store initialization
+│   ├── renderer/        # Renderer process (React frontend)
+│   │   ├── index.tsx    # React entry point
+│   │   ├── App.tsx      # Main React component
+│   │   ├── components/  # React components
+│   │   │   ├── ApiKeySettings.tsx
+│   │   │   ├── FlightSearchForm.tsx
+│   │   │   ├── FlightResults.tsx
+│   │   │   └── QuotaInfo.tsx
+│   │   ├── hooks/       # Custom React hooks
+│   │   │   ├── useApiKey.ts
+│   │   │   └── useFlightSearch.ts
+│   │   ├── types.ts     # TypeScript type definitions
+│   │   └── utils/        # Utility functions
+│   │       └── flightUtils.ts
 │   ├── preload.ts       # Secure preload script
-│   ├── renderer.tsx     # React entry point
-│   ├── App.tsx          # Main React component
 │   ├── index.html       # HTML template
-│   └── electron.d.ts   # TypeScript declarations
+│   └── electron.d.ts    # TypeScript declarations
 ├── assets/              # Application assets (icons, etc.)
 ├── package.json
 ├── tsconfig.json
@@ -104,7 +116,9 @@ FlightCalendar/
 
 ### Code Organization
 
-The main process code has been modularized for better maintainability:
+The codebase is organized into two main sections:
+
+#### Main Process (`src/main/`)
 
 - **`main.ts`**: Entry point that initializes all handlers
 - **`main/window.ts`**: Handles window creation, lifecycle events, and icon loading
@@ -114,6 +128,22 @@ The main process code has been modularized for better maintainability:
 - **`main/cache.ts`**: Provides caching utilities with 24-hour TTL
 - **`main/quota.ts`**: Extracts and parses API quota information from response headers
 - **`main/store.ts`**: Initializes electron-store for data persistence
+
+#### Renderer Process (`src/renderer/`)
+
+- **`renderer/index.tsx`**: React application entry point
+- **`renderer/App.tsx`**: Main application component that orchestrates all UI components
+- **`renderer/components/`**: Reusable React components
+  - `ApiKeySettings.tsx`: API key configuration accordion
+  - `FlightSearchForm.tsx`: Flight search form with date picker
+  - `FlightResults.tsx`: List of flight search results
+  - `QuotaInfo.tsx`: API quota information display
+- **`renderer/hooks/`**: Custom React hooks for state management
+  - `useApiKey.ts`: Manages API key loading and saving
+  - `useFlightSearch.ts`: Handles flight search logic and state
+- **`renderer/types.ts`**: TypeScript type definitions for the renderer
+- **`renderer/utils/`**: Utility functions for data processing
+  - `flightUtils.ts`: Flight data parsing and formatting utilities
 
 ## Technologies
 
